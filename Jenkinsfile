@@ -5,6 +5,8 @@ pipeline {
         DOCKER_USER = 'shaffat01'
         IMAGE_NAME = 'netmonitor-app'
         IMAGE_TAG = "${env.BUILD_NUMBER}"
+        HOST_PORT = '8085'          // আপনি যে পোর্টে ওয়েবসাইট চালাতে চান
+        CONTAINER_PORT = '3000'     // Flask/Gunicorn অ্যাপের ভেতরের পোর্ট
     }
 
     stages {
@@ -40,11 +42,19 @@ pipeline {
 
         stage('Deploy Application') {
             steps {
-                echo '🚀 Deploying container from Docker Hub on Port 8085...'
+                echo "🚀 Deploying container from Docker Hub on Port ${HOST_PORT}..."
                 sh """
+                    mkdir -p /var/netmonitor_data
                     docker stop netmonitor-app-hub-container || true
                     docker rm netmonitor-app-hub-container || true
-                    docker run -d --name netmonitor-app-hub-container -p 8086:80 ${DOCKER_USER}/${IMAGE_NAME}:${IMAGE_TAG}
+                    docker run -d \
+                        --name netmonitor-app-hub-container \
+                        --restart always \
+                        --cap-add=NET_RAW \
+                        --sysctl net.ipv4.ping_group_range="0 2147483647" \
+                        -v /var/netmonitor_data:/app/data \
+                        -p ${HOST_PORT}:${CONTAINER_PORT} \
+                        ${DOCKER_USER}/${IMAGE_NAME}:${IMAGE_TAG}
                 """
             }
         }
@@ -56,7 +66,7 @@ pipeline {
             sh 'docker image prune -f || true'
         }
         success {
-            echo "🎉 SUCCESS: Image pushed to Docker Hub and App Live on Port 8085!"
+            echo "🎉 SUCCESS: Image pushed to Docker Hub and App Live on Port ${HOST_PORT}!"
         }
         failure {
             echo "❌ FAILURE: Docker Hub Push or Deployment failed!"
