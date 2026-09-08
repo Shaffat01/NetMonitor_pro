@@ -1,9 +1,8 @@
 """
 Windows Desktop Notification Module
-Sends real Windows toast notifications with sound when nodes go DOWN/UP
+Sends real Windows toast notifications with sound when nodes go DOWN/UP (Windows only)
 """
 import platform
-import winsound
 
 IS_WINDOWS = platform.system().lower() == 'windows'
 
@@ -13,7 +12,7 @@ def _play_alert_sound():
     if not IS_WINDOWS:
         return
     try:
-        # Windows Exclamation sound
+        import winsound
         winsound.MessageBeep(winsound.MB_ICONEXCLAMATION)
     except Exception as e:
         print(f"[SOUND ERROR] {e}")
@@ -24,7 +23,7 @@ def _play_up_sound():
     if not IS_WINDOWS:
         return
     try:
-        # Windows Asterisk sound (positive)
+        import winsound
         winsound.MessageBeep(winsound.MB_ICONASTERISK)
     except Exception as e:
         print(f"[SOUND ERROR] {e}")
@@ -35,17 +34,20 @@ def send_windows_notification(title, message, sound_type='alert'):
     if not IS_WINDOWS:
         return
 
+    # 1. Sound
     if sound_type == 'alert':
         _play_alert_sound()
     elif sound_type == 'up':
         _play_up_sound()
+
+    # 2. Toast Notification
     try:
         from plyer import notification
         notification.notify(
             title=title,
             message=message,
             app_name='NetMonitor Pro',
-            timeout=5 
+            timeout=5
         )
     except Exception as e:
         print(f"[WINDOWS NOTIFY ERROR] {e}")
