@@ -1,14 +1,17 @@
 import os
 
-basedir = os.path.abspath(os.path.dirname(__file__))
-SQLALCHEMY_DATABASE_URI = 'sqlite:///' + os.path.join(BASE_DIR, 'data', 'nodes.db')
+# Base directory of the project
+BASE_DIR = os.path.abspath(os.path.dirname(__file__))
 
 class Config:
     SECRET_KEY = os.environ.get('SECRET_KEY') or 'network-monitor-secret-key-2024'
+    
+    # SQLite Database inside 'data' directory for Docker Volume persistence
     SQLALCHEMY_DATABASE_URI = os.environ.get('DATABASE_URL') or \
-        'sqlite:///' + os.path.join(basedir, 'nodes.db')
+        'sqlite:///' + os.path.join(BASE_DIR, 'data', 'nodes.db')
+        
     SQLALCHEMY_TRACK_MODIFICATIONS = False
-    UPLOAD_FOLDER = os.path.join(basedir, 'uploads')
+    UPLOAD_FOLDER = os.path.join(BASE_DIR, 'uploads')
     MAX_CONTENT_LENGTH = 16 * 1024 * 1024
 
     # ============ POLLING SETTINGS ============
