@@ -1,6 +1,7 @@
 import os
 
 basedir = os.path.abspath(os.path.dirname(__file__))
+SQLALCHEMY_DATABASE_URI = 'sqlite:///' + os.path.join(BASE_DIR, 'data', 'nodes.db')
 
 class Config:
     SECRET_KEY = os.environ.get('SECRET_KEY') or 'network-monitor-secret-key-2024'
