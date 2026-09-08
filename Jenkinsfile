@@ -8,7 +8,7 @@ pipeline {
 
     stages {
         stage('Checkout Code') {
-            steps {ে
+            steps {
                 checkout scm
             }
         }
@@ -27,7 +27,7 @@ pipeline {
                 script {
                     echo 'Deploying application...'
                     sh 'docker-compose down'
-                    sh 'docker-compose up -d'
+                    sh 'docker-compose up -d -p 8086:80'
                 }
             }
         }
