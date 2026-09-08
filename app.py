@@ -1,19 +1,20 @@
 import sys
-import ctypes
-
-def is_admin():
-    """Check if the script is running with administrator privileges."""
-    try:
-        return ctypes.windll.shell32.IsUserAnAdmin()
-    except:
-        return False
-if not is_admin():
-    print("[INIT] Requesting Administrator Privileges...")
-    ctypes.windll.shell32.ShellExecuteW(
-        None, "runas", sys.executable, " ".join(sys.argv), None, 1
-    )
-    sys.exit(0)
 import os
+
+if sys.platform == 'win32':
+    import ctypes
+    def is_admin():
+        try:
+            return ctypes.windll.shell32.IsUserAnAdmin()
+        except:
+            return False
+
+    if not is_admin():
+        print("[INIT] Requesting Administrator Privileges...")
+        ctypes.windll.shell32.ShellExecuteW(
+            None, "runas", sys.executable, " ".join(sys.argv), None, 1
+        )
+        sys.exit(0)
 import csv
 import io
 import logging
