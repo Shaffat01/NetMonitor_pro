@@ -1,0 +1,15 @@
+version: '3.8'
+
+services:
+  netmonitor:
+    build: .
+    container_name: netmonitor_app
+    restart: always
+    ports:
+      - "3000:3000"
+    volumes:
+      - ./data:/app/data
+    cap_add:
+      - NET_RAW
+    sysctls:
+      - net.ipv4.ping_group_range=0 2147483647
