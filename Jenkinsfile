@@ -44,7 +44,6 @@ pipeline {
             steps {
                 echo "🚀 Deploying container from Docker Hub on Port ${HOST_PORT}..."
                 sh """
-                    mkdir -p /var/netmonitor_data
                     docker stop netmonitor-app-hub-container || true
                     docker rm netmonitor-app-hub-container || true
                     docker run -d \
