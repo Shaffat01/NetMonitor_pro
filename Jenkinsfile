@@ -2,52 +2,64 @@ pipeline {
     agent any
 
     environment {
-        IMAGE_NAME = "netmonitor-pro"
-        CONTAINER_NAME = "netmonitor_app"
+        DOCKER_USER = 'shaffat01'
+        IMAGE_NAME = 'netmonitor-app'
+        IMAGE_TAG = "${env.BUILD_NUMBER}"
     }
 
     stages {
         stage('Checkout Code') {
             steps {
+                echo '📥 Pulling code from GitHub...'
                 checkout scm
             }
         }
 
         stage('Build Docker Image') {
             steps {
-                script {
-                    echo 'Building Optimized Docker Image...'
-                    sh 'docker-compose build'
+                echo "🐳 Building Image: ${DOCKER_USER}/${IMAGE_NAME}:${IMAGE_TAG}"
+                sh "docker build -t ${DOCKER_USER}/${IMAGE_NAME}:${IMAGE_TAG} ."
+                sh "docker tag ${DOCKER_USER}/${IMAGE_NAME}:${IMAGE_TAG} ${DOCKER_USER}/${IMAGE_NAME}:latest"
+            }
+        }
+
+        stage('Push to Docker Hub') {
+            steps {
+                echo '🔐 Logging in to Docker Hub & Pushing Image...'
+                withCredentials([usernamePassword(
+                    credentialsId: 'docker-hub-credentials', 
+                    passwordVariable: 'DOCKER_PASS', 
+                    usernameVariable: 'DOCKER_USER_ENV'
+                )]) {
+                    sh 'echo $DOCKER_PASS | docker login -u $DOCKER_USER_ENV --password-stdin'
+                    sh "docker push ${DOCKER_USER}/${IMAGE_NAME}:${IMAGE_TAG}"
+                    sh "docker push ${DOCKER_USER}/${IMAGE_NAME}:latest"
                 }
             }
         }
 
-        stage('Deploy to Server') {
+        stage('Deploy Application') {
             steps {
-                script {
-                    echo 'Deploying application...'
-                    sh 'docker-compose down'
-                    sh 'docker-compose up -d -p 8086:80'
-                }
-            }
-        }
-        
-        stage('Clean Up') {
-            steps {
-                script {
-                    echo 'Cleaning up old unused Docker images to save space...'
-                    sh 'docker image prune -f'
-                }
+                echo '🚀 Deploying container from Docker Hub on Port 8085...'
+                sh """
+                    docker stop netmonitor-app-hub-container || true
+                    docker rm netmonitor-app-hub-container || true
+                    docker run -d --name netmonitor-app-hub-container -p 8086:80 ${DOCKER_USER}/${IMAGE_NAME}:${IMAGE_TAG}
+                """
             }
         }
     }
 
     post {
+        always {
+            echo '🧹 Cleaning up local dangling images...'
+            sh 'docker image prune -f || true'
+        }
         success {
-            echo "✅ Deployment Successful! App is running on Port 3000."
+            echo "🎉 SUCCESS: Image pushed to Docker Hub and App Live on Port 8085!"
         }
         failure {
-            echo "❌ Deployment Failed! Please check the Jenkins logs."
+            echo "❌ FAILURE: Docker Hub Push or Deployment failed!"
         }
     }
 }
