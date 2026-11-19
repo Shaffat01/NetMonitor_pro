@@ -16,20 +16,21 @@ class Config:
 
     # ============ POLLING SETTINGS ============
     PING_INTERVAL = 15         # 15 seconds (enough time for 290+ nodes)
+    STALE_AFTER_SECONDS = int(os.environ.get('STALE_AFTER_SECONDS', 3 * PING_INTERVAL))
     PING_TIMEOUT = 1
     PING_COUNT = 2             # 2 pings (fast + reliable)
     PING_PRIVILEGED = True
     MAX_CONCURRENT_PINGS = 350 # 350 concurrent (enough for 290+ devices in one batch)
 
     # ============ FLAP PROTECTION ============
-    FAIL_THRESHOLD = 3         # 3 fails = DOWN (30 seconds)
-    SUCCESS_THRESHOLD = 2      # 2 successes = UP (20 seconds)
+    FAIL_THRESHOLD = 3         # 3 consecutive failed probes
+    SUCCESS_THRESHOLD = 2      # 2 consecutive healthy probes
 
     # Warning thresholds (need consecutive checks too)
-    WARNING_PACKET_LOSS = 75   # >75% loss = Warning
+    WARNING_PACKET_LOSS = 50   # One lost packet out of two counts as degraded
     WARNING_THRESHOLD = 3      # Need 3 consecutive high-loss checks for Warning
 
-    SCHEDULER_API_ENABLED = True
+    SCHEDULER_API_ENABLED = False
 
     # ============ DATABASE SETTINGS ============
     SQLALCHEMY_ENGINE_OPTIONS = {

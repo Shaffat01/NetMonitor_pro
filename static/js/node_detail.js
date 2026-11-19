@@ -229,7 +229,7 @@ function renderNodeTimeline(logs, total) {
 
 function pingNodeFromDetail(nodeId) {
     updateStatusText('Pinging node...');
-    fetch(`/api/nodes/${nodeId}/ping`, { method: 'POST' })
+    netmonPost(`/api/nodes/${nodeId}/ping`, { method: 'POST' })
         .then(response => response.json())
         .then(data => {
             updateStatusText(`Ping complete: ${data.ip_address} - ${data.status}`);

@@ -41,7 +41,7 @@
             </p>
         </div>
 
-        <form method="POST" action="/upload" enctype="multipart/form-data" class="modern-form">
+        <form method="POST" action="/upload" enctype="multipart/form-data" class="modern-form">{% if auth_enabled %}<input type="hidden" name="csrf_token" value="{{ csrf_token() }}">{% endif %}
             <div class="upload-area" id="uploadArea">
                 <input type="file" id="csv_file" name="csv_file" accept=".csv" required
                        onchange="updateFileName(this)">

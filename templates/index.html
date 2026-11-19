@@ -1,23 +1,54 @@
 {% extends "base.html" %}
 
 {% block content %}
-<div class="content-wrapper">
-    <!-- Page Header -->
-    <div class="page-header">
-        <div>
-            <h2 class="page-title">
-                <i class="fas fa-th-list"></i>
-                Network Nodes
-            </h2>
-            <p class="page-subtitle">Real-time monitoring of all network devices</p>
+<div class="content-wrapper noc-workspace">
+    <section class="noc-hero" aria-labelledby="overviewTitle">
+        <div class="noc-hero-copy">
+            <p class="noc-eyebrow"><span></span> NETWORK OPERATIONS</p>
+            <h2 id="overviewTitle">Network overview</h2>
+            <p>See device health, investigate outages, and keep every site in view.</p>
+            <a href="{{ url_for('reports') }}" class="noc-hero-link">Explore NOC reports <span aria-hidden="true">↗</span></a>
         </div>
-        <div class="page-info">
-            <span class="result-count" id="resultCount">Loading...</span>
-        </div>
-    </div>
+        <svg class="noc-topology" viewBox="0 0 480 230" aria-hidden="true">
+            <defs><pattern id="topologyGrid" width="24" height="24" patternUnits="userSpaceOnUse"><circle cx="2" cy="2" r="1" fill="#a0d7ff" opacity=".25"/></pattern></defs>
+            <rect width="480" height="230" fill="url(#topologyGrid)"/>
+            <g fill="none" stroke="#62b8f6" stroke-width="1.6" opacity=".65">
+                <path d="M245 115H171L112 59H63M171 115l-59 58H62m183-58h72l48-65h59m-107 65 50 53h59m-181-53V43m0 72v73"/>
+                <circle cx="245" cy="115" r="55" opacity=".55"/><circle cx="245" cy="115" r="42" opacity=".35"/>
+            </g>
+            <g fill="#112b50" stroke="#88d1ff" stroke-width="2"><circle cx="63" cy="59" r="8"/><circle cx="62" cy="173" r="8"/><circle cx="424" cy="50" r="8"/><circle cx="426" cy="168" r="8"/><circle cx="245" cy="43" r="6"/><circle cx="245" cy="188" r="6"/></g>
+            <circle cx="245" cy="115" r="26" fill="#173e65" stroke="#67efd9" stroke-width="2"/>
+            <path d="M228 115h8l5-8 5 17 5-9h10" fill="none" stroke="#67efd9" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"/>
+            <g fill="#67efd9"><circle cx="112" cy="59" r="4"/><circle cx="365" cy="50" r="4"/><circle cx="367" cy="168" r="4"/></g>
+        </svg>
+    </section>
 
-    <!-- Nodes Table Card -->
-    <div class="table-card">
+    <section class="noc-kpis" aria-label="Device health filters">
+        {% for key, label, icon, hint in [('all','Total nodes','▦','All devices'), ('up','Online','↗','Responding normally'), ('down','Offline','↓','Confirmed downtime'), ('warning','Warning','!','Degraded connection'), ('stale','Stale','◷','No recent measurement')] %}
+        <button type="button" class="noc-kpi filter-btn{% if key == 'all' %} active{% endif %}" data-filter="{{ key }}" aria-pressed="{{ 'true' if key == 'all' else 'false' }}" onclick="setFilter('{{ key }}')">
+            <span class="noc-kpi-icon" aria-hidden="true">{{ icon }}</span>
+            <span class="noc-kpi-label">{{ label }}</span>
+            <strong data-count="{{ key }}">—</strong>
+            <small>{{ hint }}</small>
+        </button>
+        {% endfor %}
+    </section>
+
+    <section class="table-card noc-inventory" aria-labelledby="inventoryTitle">
+        <div class="noc-inventory-head">
+            <div><h2 id="inventoryTitle">Device inventory</h2><p id="resultCount" aria-live="polite">Loading devices…</p></div>
+            <div class="noc-actions manage-only">
+                <button type="button" class="action-btn-secondary" id="refreshBtn" onclick="refreshAll()">Run checks</button>
+                <a href="{{ url_for('upload_csv') }}" class="action-btn-secondary">Import CSV</a>
+                <a href="{{ url_for('add_node') }}" class="action-btn-primary">+ Add node</a>
+            </div>
+        </div>
+        <div class="noc-filters">
+            <label class="noc-search"><span aria-hidden="true">⌕</span><input type="search" id="searchInput" aria-label="Search devices" placeholder="Search name, IP or site…" oninput="filterNodes()"><kbd aria-hidden="true">/</kbd></label>
+            <button type="button" id="searchClear" class="action-btn-secondary" onclick="clearSearch()" style="display:none">Clear search</button>
+            <label class="noc-site" for="siteFilter">Site <select id="siteFilter" onchange="renderNodes(nodesData)"><option value="">All sites</option></select></label>
+            <button type="button" id="pauseLive" class="action-btn-secondary" aria-pressed="false" onclick="toggleLivePolling()">Pause refresh</button>
+        </div>
         <div class="table-wrapper">
             <table id="nodesTable" class="nodes-table">
                 <thead>
@@ -84,11 +115,11 @@
                 </tbody>
             </table>
         </div>
-    </div>
+    </section>
 </div>
 
 <!-- Context Menu -->
-<div id="contextMenu" class="context-menu">
+<div id="contextMenu" class="context-menu manage-only">
     <div class="context-item" onclick="editFromContext()">
         <i class="fas fa-edit"></i>
         <span>Edit Node</span>

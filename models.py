@@ -1,3 +1,5 @@
+from flask import current_app
+from health import is_stale
 from flask_sqlalchemy import SQLAlchemy
 from datetime import datetime, timedelta
 
@@ -25,6 +27,7 @@ class Node(db.Model):
     __tablename__ = 'nodes'
 
     id = db.Column(db.Integer, primary_key=True)
+    site = db.Column(db.String(100), nullable=False, default='', server_default='')
     node_name = db.Column(db.String(255), nullable=False)
     ip_address = db.Column(db.String(45), nullable=False, unique=True)
     response_time = db.Column(db.Float, default=0.0)
@@ -41,6 +44,9 @@ class Node(db.Model):
     consecutive_failures = db.Column(db.Integer, default=0)
     consecutive_successes = db.Column(db.Integer, default=0)
     last_ping_success = db.Column(db.Boolean, default=None, nullable=True)
+
+    def is_stale(self, now):
+        return is_stale(self.enabled, self.last_checked, now, current_app.config['STALE_AFTER_SECONDS'])
 
     def to_dict(self):
         now = datetime.utcnow()
@@ -67,6 +73,7 @@ class Node(db.Model):
         return {
             'id': self.id,
             'node_name': self.node_name,
+            'site': self.site,
             'ip_address': self.ip_address,
             'response_time': self.response_time,
             'response_time_display': f"{int(self.response_time)} ms" if self.response_time is not None else "N/A",
@@ -76,7 +83,9 @@ class Node(db.Model):
             'last_status_change': bd_time(self.last_status_change).isoformat() if self.last_status_change else None,
             'since_last_change': since_str,
             'since_last_change_seconds': int(since_change.total_seconds()) if since_change else 0,
-            'last_checked': self.last_checked.isoformat() if self.last_checked else None,
+            'last_checked': self.last_checked.isoformat() + 'Z' if self.last_checked else None,
+            'stale': self.is_stale(now),
+            'stale_after_seconds': current_app.config['STALE_AFTER_SECONDS'],
             'enabled': self.enabled,
             'consecutive_failures': self.consecutive_failures,
             'consecutive_successes': self.consecutive_successes
@@ -132,3 +141,30 @@ class DowntimeLog(db.Model):
 
     def __repr__(self):
         return f'<DowntimeLog {self.node_name} {self.status_change} at {self.timestamp}>'
+
+
+class AlertDelivery(db.Model):
+    __tablename__ = 'alert_deliveries'
+    __table_args__ = (
+        db.UniqueConstraint('incident', 'event', 'channel'),
+        db.Index('ix_alert_delivery_due', 'state', 'next_attempt'),
+    )
+
+    id = db.Column(db.Integer, primary_key=True)
+    incident = db.Column(db.String(80), nullable=False)
+    event = db.Column(db.String(12), nullable=False)
+    channel = db.Column(db.String(12), nullable=False)
+    message = db.Column(db.Text, nullable=False)
+    state = db.Column(db.String(12), nullable=False, default='pending')
+    attempts = db.Column(db.Integer, nullable=False, default=0)
+    next_attempt = db.Column(db.DateTime, nullable=False)
+
+
+class ProbeHour(db.Model):
+    __tablename__ = 'probe_hours'
+    node_id = db.Column(db.Integer, db.ForeignKey('nodes.id'), primary_key=True)
+    hour = db.Column(db.DateTime, primary_key=True, index=True)
+    checks = db.Column(db.Integer, nullable=False)
+    replies = db.Column(db.Integer, nullable=False)
+    loss_sum = db.Column(db.Float, nullable=False)
+    rtt_sum = db.Column(db.Float, nullable=False)

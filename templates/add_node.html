@@ -13,7 +13,7 @@
             </div>
         </div>
 
-        <form method="POST" action="/add" class="modern-form">
+        <form method="POST" action="/add" class="modern-form">{% if auth_enabled %}<input type="hidden" name="csrf_token" value="{{ csrf_token() }}">{% endif %}
             <div class="form-row">
                 <div class="form-field">
                     <label for="node_name">
@@ -34,6 +34,13 @@
                            placeholder="e.g., 192.168.158.250"
                            pattern="^(\d{1,3}\.){3}\d{1,3}$">
                     <small>Valid IPv4 address (e.g., 192.168.1.1)</small>
+                </div>
+            </div>
+
+            <div class="form-row">
+                <div class="form-field">
+                    <label for="site">Site / Branch</label>
+                    <input type="text" id="site" name="site" maxlength="100" value="" placeholder="e.g., Gazipur">
                 </div>
             </div>
 

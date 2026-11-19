@@ -11,3 +11,10 @@ venv/
 nodes.db
 nodes.db-shm
 nodes.db-wal
+
+data/
+*.db
+*.db-wal
+*.db-shm
+
+.env

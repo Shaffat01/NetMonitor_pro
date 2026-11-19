@@ -1,7 +1,7 @@
 import sys
 import os
 
-if sys.platform == 'win32':
+if sys.platform == 'win32' and os.environ.get('NETMON_DISABLE_BACKGROUND') != '1':
     import ctypes
     def is_admin():
         try:
@@ -25,6 +25,10 @@ from flask import (
 )
 from flask_apscheduler import APScheduler
 from config import Config
+from access import install_access
+from alerts import configure_alerts, dispatch_alerts
+from reporting import build_report, prune_probes, remove_probes, trend_points
+from sqlalchemy.engine import make_url
 from models import db, Node, DowntimeLog
 from monitor import monitor
 
@@ -34,9 +38,16 @@ log.setLevel(logging.ERROR)
 
 app = Flask(__name__)
 app.config.from_object(Config)
+install_access(app)
+configure_alerts(app)
 
 # Ensure upload folder exists
 os.makedirs(app.config['UPLOAD_FOLDER'], exist_ok=True)
+
+database_url = make_url(app.config['SQLALCHEMY_DATABASE_URI'])
+if database_url.get_backend_name() == 'sqlite' and database_url.database not in (None, ':memory:'):
+    if os.path.isabs(database_url.database):
+        os.makedirs(os.path.dirname(database_url.database), exist_ok=True)
 
 # Initialize extensions
 db.init_app(app)
@@ -47,8 +58,11 @@ def is_main_process():
     """Check if this is the main Werkzeug process (not the reloader)."""
     return os.environ.get('WERKZEUG_RUN_MAIN') == 'true' or not app.debug
 
+# Allow isolated tooling to import the app without background jobs.
+background_enabled = os.environ.get('NETMON_DISABLE_BACKGROUND') != '1'
+
 # Initialize monitor only in main process
-if is_main_process():
+if background_enabled and is_main_process():
     monitor.init_app(app)
 
 # Setup scheduler ONLY in main process
@@ -67,11 +81,28 @@ def scheduled_monitor():
     with app.app_context():
         monitor.monitor_all_nodes()
 
+@scheduler.task('interval', id='deliver_alerts', seconds=15, max_instances=1, coalesce=True)
+def scheduled_alerts():
+    with app.app_context():
+        dispatch_alerts()
+
+
+@scheduler.task('interval', id='prune_probe_history', hours=1, max_instances=1, coalesce=True)
+def prune_probe_history():
+    with app.app_context():
+        prune_probes(datetime.utcnow())
+        db.session.commit()
+
+
 # Create tables
 with app.app_context():
     db.create_all()
     # Enable SQLite WAL mode for better concurrent performance with 290+ devices
     with db.engine.connect() as conn:
+        columns = {row[1] for row in conn.execute(db.text('PRAGMA table_info(nodes)'))}
+        if 'site' not in columns:
+            conn.execute(db.text("ALTER TABLE nodes ADD COLUMN site VARCHAR(100) NOT NULL DEFAULT ''"))
+            conn.commit()
         conn.execute(db.text("PRAGMA journal_mode=WAL"))
         conn.execute(db.text("PRAGMA synchronous=NORMAL"))
         conn.execute(db.text("PRAGMA cache_size=-10000"))
@@ -80,7 +111,7 @@ with app.app_context():
     print("[DB] SQLite WAL mode enabled - optimized for concurrent access")
 
 # Start scheduler only in main process
-if is_main_process():
+if background_enabled and is_main_process():
     scheduler.init_app(app)
     scheduler.start()
 
@@ -102,6 +133,18 @@ def index():
     """Main dashboard page."""
     return render_template('index.html')
 
+@app.route('/reports')
+def reports():
+    site = request.args.get('site')
+    sites = [value for (value,) in db.session.query(Node.site).distinct().order_by(Node.site)]
+    groups, trend, rankings = build_report(datetime.utcnow(), site)
+    rtt_max = max(1, max((row[1] or 0 for row in trend), default=0))
+    return render_template('reports.html', site=site, sites=sites, groups=groups,
+                           trend=trend, rankings=rankings, rtt_max=rtt_max,
+                           latency_points=trend_points(trend, 1, rtt_max),
+                           loss_points=trend_points(trend, 2, 100))
+
+
 @app.route('/add', methods=['GET', 'POST'])
 def add_node():
     """Add a new node."""
@@ -119,6 +162,7 @@ def add_node():
             return render_template('add_node.html')
 
         node = Node(
+            site=request.form.get('site', '').strip()[:100],
             node_name=node_name,
             ip_address=ip_address,
             status='Unknown',
@@ -162,6 +206,9 @@ def edit_node(node_id):
             flash(f'Another node with IP {ip_address} already exists.', 'error')
             return render_template('edit_node.html', node=node)
 
+        if node.ip_address != ip_address:
+            remove_probes(node.id)
+        node.site = request.form.get('site', '').strip()[:100]
         node.node_name = node_name
         node.ip_address = ip_address
         node.enabled = enabled
@@ -183,6 +230,7 @@ def delete_node(node_id):
         return redirect(url_for('index'))
 
     node_name = node.node_name
+    remove_probes(node.id)
     db.session.delete(node)
     db.session.commit()
 
@@ -239,6 +287,7 @@ def upload_csv():
                     continue
 
                 node = Node(
+                    site=(row.get('site') or row.get('branch') or '').strip()[:100],
                     node_name=node_name,
                     ip_address=ip_address,
                     status='Unknown',
@@ -336,6 +385,7 @@ def api_delete_node():
     if not node:
         return jsonify({'error': 'Node not found'}), 404
 
+    remove_probes(node.id)
     db.session.delete(node)
     db.session.commit()
 
@@ -493,26 +543,23 @@ def api_clear_logs():
 @app.route('/api/stats')
 def api_stats():
     """Get summary statistics."""
-    total = Node.query.count()
-    up = Node.query.filter_by(status='Node Up').count()
-    down = Node.query.filter_by(status='Node Down').count()
-    warning = Node.query.filter_by(status='Warning').count()
-    unknown = Node.query.filter_by(status='Unknown').count()
-
-    return jsonify({
-        'total': total,
-        'up': up,
-        'down': down,
-        'warning': warning,
-        'unknown': unknown
-    })
+    nodes = Node.query.all()
+    now = datetime.utcnow()
+    counts = {'total': len(nodes), 'up': 0, 'down': 0, 'warning': 0,
+              'unknown': 0, 'stale': 0, 'disabled': 0}
+    labels = {'Node Up': 'up', 'Node Down': 'down', 'Warning': 'warning'}
+    for node in nodes:
+        key = ('disabled' if not node.enabled else 'stale' if node.is_stale(now)
+               else labels.get(node.status, 'unknown'))
+        counts[key] += 1
+    return jsonify(counts)
 
 if __name__ == '__main__':
     # For development: python app.py
     # For production with 290+ devices: gunicorn --workers 2 --threads 4 --bind 0.0.0.0:3000 app:app
     app.run(
         debug=False,
-        host='0.0.0.0',
+        host='127.0.0.1',
         port=3000,
         threaded=True,
         use_reloader=False

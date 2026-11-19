@@ -6,7 +6,22 @@ services:
     container_name: netmonitor_app
     restart: always
     ports:
-      - "3000:3000"
+      - "127.0.0.1:3000:3000"
+    environment:
+      NETMON_AUTH: ${NETMON_AUTH:-0}
+      NETMON_ADMIN_HASH: ${NETMON_ADMIN_HASH:-}
+      NETMON_VIEWER_HASH: ${NETMON_VIEWER_HASH:-}
+      SECRET_KEY: ${SECRET_KEY:-}
+      TELEGRAM_BOT_TOKEN: ${TELEGRAM_BOT_TOKEN:-}
+      TELEGRAM_CHAT_ID: ${TELEGRAM_CHAT_ID:-}
+      SMTP_HOST: ${SMTP_HOST:-}
+      SMTP_PORT: ${SMTP_PORT:-}
+      SMTP_FROM: ${SMTP_FROM:-}
+      SMTP_TO: ${SMTP_TO:-}
+      SMTP_USERNAME: ${SMTP_USERNAME:-}
+      SMTP_PASSWORD: ${SMTP_PASSWORD:-}
+      MAINTENANCE_START: ${MAINTENANCE_START:-}
+      MAINTENANCE_END: ${MAINTENANCE_END:-}
     volumes:
       - ./data:/app/data
     cap_add:

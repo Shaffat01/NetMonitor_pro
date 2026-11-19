@@ -1,0 +1,66 @@
+{% extends 'base.html' %}
+
+{% macro graph(label, maximum, segments) %}
+<figure>
+    <figcaption><strong>{{ label }}</strong> (scale: 0–{{ maximum }})</figcaption>
+    {% if segments %}
+    <svg viewBox="0 0 600 120" role="img" aria-label="{{ label }} by UTC hour over 7 days" style="width:100%;max-width:48rem;color:#2683df">
+        <path d="M8 8V112H592" fill="none" stroke="currentColor" opacity=".4" />
+        {% for segment in segments %}
+            {% if segment|length == 1 %}
+            <circle cx="{{ segment[0][0] }}" cy="{{ segment[0][1] }}" r="2" fill="currentColor" />
+            {% else %}
+            <polyline points="{% for x, y in segment %}{{ x }},{{ y }} {% endfor %}" fill="none" stroke="currentColor" stroke-width="2" />
+            {% endif %}
+        {% endfor %}
+    </svg>
+    {% else %}<p>No measurements yet.</p>{% endif %}
+</figure>
+{% endmacro %}
+
+{% block content %}
+<div class="content-wrapper">
+    <h2 class="page-title">NOC Reports</h2>
+    <form method="get" action="{{ url_for('reports') }}">
+        <label for="site">Site / Branch</label>
+        <select id="site" name="site">
+            {% for value in sites %}
+                <option value="{{ value }}" {% if site == value %}selected{% endif %}>{{ value or 'Unassigned' }}</option>
+            {% endfor %}
+        </select>
+        <button class="btn btn-primary" type="submit" {% if not sites %}disabled{% endif %}>Filter</button>
+        <a href="{{ url_for('reports') }}">All sites</a>
+    </form>
+    <p>Uptime is the percentage of measured checks that received a reply. No measurements means N/A, not 100%. Each window includes the current partial UTC hour.</p>
+
+    {% for group, rows in groups.items() %}
+    <h3>{{ group or 'Unassigned' }}</h3>
+    <div class="table-wrapper"><table class="nodes-table">
+        <thead><tr><th>Node</th><th>24-hour uptime</th><th>7-day uptime</th><th>7-day downtime</th></tr></thead>
+        <tbody>{% for node, day, week, down in rows %}
+            <tr><td><a href="{{ url_for('node_detail', node_id=node.id) }}">{{ node.node_name }}</a></td>
+            <td>{% if day[0] is none %}N/A{% else %}{{ day[0] }}% ({{ day[1] }} checks){% endif %}</td>
+            <td>{% if week[0] is none %}N/A{% else %}{{ week[0] }}% ({{ week[1] }} checks){% endif %}</td>
+            <td>{{ (down / 60)|round(1) }} min</td></tr>
+        {% endfor %}</tbody>
+    </table></div>
+    {% else %}<p>No nodes match this site.</p>{% endfor %}
+
+    <h3>7-day hourly trends</h3>
+    {{ graph('Average latency (ms)', rtt_max, latency_points) }}
+    {{ graph('Average packet loss (%)', 100, loss_points) }}
+    <details><summary>Hourly values (UTC)</summary>
+        <div class="table-wrapper"><table class="nodes-table">
+        <thead><tr><th>Hour (UTC)</th><th>Latency</th><th>Packet loss</th><th>Checks</th></tr></thead>
+        <tbody>{% for hour, rtt, loss, count in trend|reverse %}
+        <tr><td>{{ hour.strftime('%Y-%m-%d %H:%M') }}</td><td>{{ rtt if rtt is not none else 'N/A' }}</td>
+        <td>{{ loss if loss is not none else 'N/A' }}</td><td>{{ count }}</td></tr>
+        {% endfor %}</tbody></table></div>
+    </details>
+
+    <h3>Top 10 nodes by logged downtime (7 days)</h3>
+    <ol>{% for node, day, week, down in rankings %}
+        <li><a href="{{ url_for('node_detail', node_id=node.id) }}">{{ node.node_name }}</a> — {{ (down / 60)|round(1) }} min</li>
+    {% else %}<li>No logged downtime in this window.</li>{% endfor %}</ol>
+</div>
+{% endblock %}
