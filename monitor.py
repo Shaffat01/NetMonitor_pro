@@ -9,7 +9,7 @@ import re
 from datetime import datetime
 from icmplib import async_multiping, ping as sync_ping
 from models import db, Node, DowntimeLog
-from win_notify import notify_node_down, notify_node_up, notify_warning
+from win_notify import notify_node_down, notify_node_up
 
 class NetworkMonitor:
     def __init__(self, app=None):
@@ -139,25 +139,18 @@ class NetworkMonitor:
 
     def _evaluate_status(self, node, ping_success, packet_loss, response_time):
         config = self.app.config
-        threshold = config.get('WARNING_PACKET_LOSS', 75)
         old_status = node.status
 
         if ping_success:
-            degraded = packet_loss >= threshold
-            same_kind = (node.last_ping_success and node.packet_loss is not None
-                         and (node.packet_loss >= threshold) == degraded)
-            node.consecutive_successes = (node.consecutive_successes or 0) + 1 if same_kind else 1
+            node.consecutive_successes = (node.consecutive_successes or 0) + 1
             node.consecutive_failures = 0
-            outcome = 'degraded' if degraded else 'healthy'
         else:
             node.consecutive_failures = (node.consecutive_failures or 0) + 1
             node.consecutive_successes = 0
-            outcome = 'failure'
 
         new_status = next_status(
-            old_status, outcome, node.consecutive_failures, node.consecutive_successes,
+            old_status, ping_success, node.consecutive_failures, node.consecutive_successes,
             fail=config.get('FAIL_THRESHOLD', 3), recover=config.get('SUCCESS_THRESHOLD', 2),
-            warn=config.get('WARNING_THRESHOLD', 3),
         )
 
         # Update metrics (always)
@@ -181,10 +174,8 @@ class NetworkMonitor:
                 try:
                     if n_status == 'Node Down':
                         notify_node_down(n_name, n_ip)
-                    elif n_status == 'Node Up' and (o_status == 'Node Down' or o_status == 'Warning'):
+                    elif n_status == 'Node Up' and o_status == 'Node Down':
                         notify_node_up(n_name, n_ip)
-                    elif n_status == 'Warning':
-                        notify_warning(n_name, n_ip)
                 except Exception as e:
                     print(f"[NOTIFY ERROR] {e}")
 
@@ -199,11 +190,6 @@ class NetworkMonitor:
             # ============ DOWNTIME LOGGING ============
             try:
                 if new_status == 'Node Down':
-                    if old_status == 'Warning':
-                        for warning in DowntimeLog.query.filter_by(
-                            node_id=node.id, status_change='Warning', is_resolved=False
-                        ):
-                            warning.is_resolved = True
                     # Node went DOWN - create new log entry (unresolved)
                     log = DowntimeLog(
                         node_id=node.id,
@@ -217,7 +203,7 @@ class NetworkMonitor:
                     db.session.add(log)
                     queue_alert(log, 'down')
 
-                elif new_status == 'Node Up' and (old_status == 'Node Down' or old_status == 'Warning'):
+                elif new_status == 'Node Up' and old_status == 'Node Down':
                     # Node came BACK UP - find unresolved log and close it
                     unresolved = DowntimeLog.query.filter_by(
                         node_id=node.id,
@@ -245,18 +231,6 @@ class NetworkMonitor:
                         if unresolved.status_change == 'Node Down':
                             queue_alert(unresolved, 'recovery')
 
-                elif new_status == 'Warning':
-                    # Warning state log
-                    log = DowntimeLog(
-                        node_id=node.id,
-                        node_name=node.node_name,
-                        ip_address=node.ip_address,
-                        status_change='Warning',
-                        previous_status=old_status,
-                        timestamp=datetime.utcnow(),
-                        is_resolved=False
-                    )
-                    db.session.add(log)
             except Exception as e:
                 print(f"[LOG ERROR] Failed to save downtime log: {e}")
 

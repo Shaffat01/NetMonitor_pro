@@ -104,6 +104,13 @@ with app.app_context():
             conn.execute(db.text("ALTER TABLE nodes ADD COLUMN site VARCHAR(100) NOT NULL DEFAULT ''"))
             conn.commit()
         conn.execute(db.text("PRAGMA journal_mode=WAL"))
+        # Recheck existing Warning nodes under the new reachability-only rules.
+        conn.execute(db.text("""
+            UPDATE nodes SET status = 'Unknown', last_checked = NULL,
+                consecutive_successes = 0, consecutive_failures = 0,
+                last_ping_success = NULL, last_status_change = CURRENT_TIMESTAMP
+            WHERE status = 'Warning'
+        """))
         conn.execute(db.text("PRAGMA synchronous=NORMAL"))
         conn.execute(db.text("PRAGMA cache_size=-10000"))
         conn.execute(db.text("PRAGMA busy_timeout=30000"))
@@ -545,9 +552,9 @@ def api_stats():
     """Get summary statistics."""
     nodes = Node.query.all()
     now = datetime.utcnow()
-    counts = {'total': len(nodes), 'up': 0, 'down': 0, 'warning': 0,
+    counts = {'total': len(nodes), 'up': 0, 'down': 0,
               'unknown': 0, 'stale': 0, 'disabled': 0}
-    labels = {'Node Up': 'up', 'Node Down': 'down', 'Warning': 'warning'}
+    labels = {'Node Up': 'up', 'Node Down': 'down'}
     for node in nodes:
         key = ('disabled' if not node.enabled else 'stale' if node.is_stale(now)
                else labels.get(node.status, 'unknown'))

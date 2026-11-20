@@ -26,10 +26,6 @@ class Config:
     FAIL_THRESHOLD = 3         # 3 consecutive failed probes
     SUCCESS_THRESHOLD = 2      # 2 consecutive healthy probes
 
-    # Warning thresholds (need consecutive checks too)
-    WARNING_PACKET_LOSS = 50   # One lost packet out of two counts as degraded
-    WARNING_THRESHOLD = 3      # Need 3 consecutive high-loss checks for Warning
-
     SCHEDULER_API_ENABLED = False
 
     # ============ DATABASE SETTINGS ============

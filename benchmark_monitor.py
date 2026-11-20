@@ -73,7 +73,7 @@ def run(args):
 
             try:
                 with patch.object(monitor, '_system_ping', side_effect=probe), \
-                     patch('monitor.notify_node_down'), patch('monitor.notify_node_up'), patch('monitor.notify_warning'):
+                     patch('monitor.notify_node_down'), patch('monitor.notify_node_up'):
                     cycle()  # warm up and populate last_checked outside measured cycles
                     with ThreadPoolExecutor(max_workers=args.viewers + 1) as pool:
                         readers = [pool.submit(reader) for _ in range(args.viewers)]

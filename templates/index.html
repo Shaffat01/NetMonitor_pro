@@ -24,7 +24,7 @@
     </section>
 
     <section class="noc-kpis" aria-label="Device health filters">
-        {% for key, label, icon, hint in [('all','Total nodes','▦','All devices'), ('up','Online','↗','Responding normally'), ('down','Offline','↓','Confirmed downtime'), ('warning','Warning','!','Degraded connection'), ('stale','Stale','◷','No recent measurement')] %}
+        {% for key, label, icon, hint in [('all','Total nodes','▦','All devices'), ('up','Online','↗','Received ping replies'), ('down','Offline','↓','Confirmed downtime'), ('stale','Stale','◷','No recent measurement')] %}
         <button type="button" class="noc-kpi filter-btn{% if key == 'all' %} active{% endif %}" data-filter="{{ key }}" aria-pressed="{{ 'true' if key == 'all' else 'false' }}" onclick="setFilter('{{ key }}')">
             <span class="noc-kpi-icon" aria-hidden="true">{{ icon }}</span>
             <span class="noc-kpi-label">{{ label }}</span>

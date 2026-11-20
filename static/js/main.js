@@ -105,7 +105,7 @@ function clearSearch() {
 function nodeHealth(node) {
     if (!node.enabled) return 'disabled';
     if (node.stale) return 'stale';
-    return { 'Node Up': 'up', 'Node Down': 'down', 'Warning': 'warning' }[node.status] || 'unknown';
+    return { 'Node Up': 'up', 'Node Down': 'down' }[node.status] || 'unknown';
 }
 
 function syncSiteOptions(nodes) {
@@ -140,7 +140,7 @@ function applyFiltersAndSearch(nodes) {
 function renderNodes(nodes) {
     const tbody = document.getElementById('nodesBody');
     if (!tbody) return;
-    const counts = { all: nodes.length, up: 0, down: 0, warning: 0, stale: 0, disabled: 0, unknown: 0 };
+    const counts = { all: nodes.length, up: 0, down: 0, stale: 0, disabled: 0, unknown: 0 };
     nodes.forEach(node => counts[nodeHealth(node)]++);
     document.querySelectorAll('[data-count]').forEach(el => { el.textContent = counts[el.dataset.count]; });
     const filtered = applyFiltersAndSearch(nodes);
@@ -172,7 +172,6 @@ function renderNodes(nodes) {
         const isSelected = selectedNodeId === node.id;
         const unavailable = !node.enabled || node.stale;
         const isDown = !unavailable && node.status === 'Node Down';
-        const isWarning = !unavailable && node.status === 'Warning';
         const isUnknown = unavailable || node.status === 'Unknown';
 
         let dotClass = 'dot-up';
@@ -183,10 +182,6 @@ function renderNodes(nodes) {
             dotClass = 'dot-down';
             badgeClass = 'status-down';
             rowClass = 'row-down';
-        } else if (isWarning) {
-            dotClass = 'dot-warning';
-            badgeClass = 'status-warning';
-            rowClass = 'row-warning';
         } else if (isUnknown) {
             dotClass = 'dot-unknown';
             badgeClass = 'status-unknown';
@@ -215,7 +210,7 @@ function renderNodes(nodes) {
                     `${escapeHtml(node.node_name)} (${escapeHtml(node.ip_address)}) is DOWN!`,
                     'down'
                 );
-            } else if (node.status === 'Node Up' && (previousStatus === 'Node Down' || previousStatus === 'Warning')) {
+            } else if (node.status === 'Node Up' && previousStatus === 'Node Down') {
                 playNodeUpSound();
                 showNotification(
                     `🟢 <strong>${escapeHtml(node.node_name)}</strong> is UP<br>
@@ -231,23 +226,6 @@ function renderNodes(nodes) {
                 showAlertBar(
                     `${escapeHtml(node.node_name)} (${escapeHtml(node.ip_address)}) is back UP!`,
                     'up'
-                );
-            } else if (node.status === 'Warning') {
-                playWarningSound();
-                showNotification(
-                    `🟡 <strong>${escapeHtml(node.node_name)}</strong> - Warning<br>
-                    <small>${escapeHtml(node.ip_address)}</small>`,
-                    'warning'
-                );
-                sendDesktopNotification(
-                    '🟡 Warning',
-                    `${node.node_name} (${node.ip_address}) - Warning`,
-                    '',
-                    'warn-' + node.id
-                );
-                showAlertBar(
-                    `${escapeHtml(node.node_name)} (${escapeHtml(node.ip_address)}) - Warning`,
-                    'warning'
                 );
             }
         }

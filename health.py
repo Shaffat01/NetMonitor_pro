@@ -1,13 +1,11 @@
 """Pure monitoring decisions, independent of Flask, ICMP and the database."""
 
 
-def next_status(status, outcome, failures, successes, *, fail=3, recover=2, warn=3):
-    if outcome == 'failure' and failures >= fail:
+def next_status(status, reachable, failures, successes, *, fail=3, recover=2):
+    if not reachable and failures >= fail:
         return 'Node Down'
-    if outcome == 'healthy' and successes >= recover:
+    if reachable and successes >= recover:
         return 'Node Up'
-    if outcome == 'degraded' and successes >= warn and status != 'Node Down':
-        return 'Warning'
     return status
 
 

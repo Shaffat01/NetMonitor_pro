@@ -150,3 +150,12 @@ Results are JSON on stdout; app diagnostics are on stderr. Defaults model a
 cycle p95/max, skipped ticks, peak stale count and each API's p95. Use longer
 runs and verify live polling on the deployment host before setting capacity
 expectations. For a quick overload test, use `--interval 1 --scenario timeout`.
+
+### Reachability status
+
+Live health uses UP/DOWN only: any reply counts as reachable, even with partial
+packet loss. Three consecutive no-reply checks confirm DOWN; two consecutive
+checks with replies confirm UP. Packet loss and latency remain visible. On the
+first startup after upgrading, prior Warning nodes are reset for rechecking;
+existing downtime log entries are preserved. Stale and Disabled are shown
+separately so missing data is not mistaken for an outage.

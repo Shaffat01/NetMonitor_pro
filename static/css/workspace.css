@@ -23,13 +23,12 @@
 .noc-hero-link { display: inline-flex; align-items: center; gap: 9px; margin-top: 20px; padding: 9px 12px; border-radius: 8px; border: 1px solid #ffffff52; background: #fff1; color: #fff; text-decoration: none; font-weight: 650; }
 .noc-hero-link:hover { background: #fff3; }
 .noc-topology { position: absolute; inset: 0 0 0 auto; width: min(48%, 570px); height: 100%; opacity: .9; z-index: -1; }
-.noc-kpis { display: grid; grid-template-columns: repeat(5, minmax(0, 1fr)); gap: 12px; }
+.noc-kpis { display: grid; grid-template-columns: repeat(4, minmax(0, 1fr)); gap: 12px; }
 .noc-kpi.filter-btn { --kpi: var(--workspace-blue); --kpi-tint: var(--workspace-tint); display: grid; grid-template-columns: auto 1fr; gap: 8px 10px; align-items: center; padding: 14px; text-align: left; background: var(--bg-card); color: var(--text-primary); border: 1px solid var(--border-color); border-radius: 13px; font-size: 13px; box-shadow: none; }
 .noc-kpi.filter-btn:hover, .noc-kpi.filter-btn.active { border-color: var(--kpi); background: var(--bg-card); color: var(--text-primary); }
 .noc-kpi.filter-btn.active { box-shadow: inset 0 -3px var(--kpi); }
 .noc-kpi[data-filter="up"] { --kpi: #08785d; --kpi-tint: #d4f8eb; }
 .noc-kpi[data-filter="down"] { --kpi: #ad293c; --kpi-tint: #ffe2e7; }
-.noc-kpi[data-filter="warning"] { --kpi: #925509; --kpi-tint: #ffedc7; }
 .noc-kpi[data-filter="stale"] { --kpi: #5b4588; --kpi-tint: #efe6fc; }
 .noc-kpi-icon { display: grid; place-items: center; width: 30px; height: 30px; border-radius: 8px; background: var(--kpi-tint); color: var(--kpi); font-size: 17px; font-weight: 800; }
 .noc-kpi-label { font-weight: 650; }
