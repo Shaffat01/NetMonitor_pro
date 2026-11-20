@@ -111,6 +111,7 @@ with app.app_context():
                 last_ping_success = NULL, last_status_change = CURRENT_TIMESTAMP
             WHERE status = 'Warning'
         """))
+        conn.commit()
         conn.execute(db.text("PRAGMA synchronous=NORMAL"))
         conn.execute(db.text("PRAGMA cache_size=-10000"))
         conn.execute(db.text("PRAGMA busy_timeout=30000"))
@@ -142,11 +143,11 @@ def index():
 
 @app.route('/reports')
 def reports():
-    site = request.args.get('site')
-    sites = [value for (value,) in db.session.query(Node.site).distinct().order_by(Node.site)]
-    groups, trend, rankings = build_report(datetime.utcnow(), site)
+    groups, trend, rankings = build_report(datetime.utcnow())
+    rows = sorted((row for group in groups.values() for row in group),
+                  key=lambda row: (row[0].node_name.casefold(), row[0].id))
     rtt_max = max(1, max((row[1] or 0 for row in trend), default=0))
-    return render_template('reports.html', site=site, sites=sites, groups=groups,
+    return render_template('reports.html', rows=rows,
                            trend=trend, rankings=rankings, rtt_max=rtt_max,
                            latency_points=trend_points(trend, 1, rtt_max),
                            loss_points=trend_points(trend, 2, 100))
@@ -169,7 +170,6 @@ def add_node():
             return render_template('add_node.html')
 
         node = Node(
-            site=request.form.get('site', '').strip()[:100],
             node_name=node_name,
             ip_address=ip_address,
             status='Unknown',
@@ -215,7 +215,6 @@ def edit_node(node_id):
 
         if node.ip_address != ip_address:
             remove_probes(node.id)
-        node.site = request.form.get('site', '').strip()[:100]
         node.node_name = node_name
         node.ip_address = ip_address
         node.enabled = enabled
@@ -294,7 +293,6 @@ def upload_csv():
                     continue
 
                 node = Node(
-                    site=(row.get('site') or row.get('branch') or '').strip()[:100],
                     node_name=node_name,
                     ip_address=ip_address,
                     status='Unknown',

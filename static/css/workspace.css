@@ -42,20 +42,17 @@
 .noc-actions { display: flex; flex-wrap: wrap; gap: 8px; }
 .noc-actions a { text-decoration: none; }
 .noc-filters { border-bottom: 1px solid var(--border-color); }
-.noc-search, .noc-site { display: flex; align-items: center; gap: 8px; min-height: 38px; color: var(--text-secondary); }
+.noc-search { display: flex; align-items: center; gap: 8px; min-height: 38px; color: var(--text-secondary); }
 .noc-search { flex: 1 1 210px; padding: 0 10px; background: var(--bg-primary); border: 1px solid var(--border-color); border-radius: 8px; }
 .noc-search input { width: 100%; min-width: 0; border: 0; background: transparent; color: var(--text-primary); font: inherit; }
 .noc-search input:focus { outline: none; }
 .noc-search:focus-within { outline: 2px solid var(--workspace-blue); outline-offset: 1px; }
 .noc-search kbd { border: 1px solid var(--border-color); border-radius: 4px; padding: 1px 5px; }
-.noc-site select { max-width: 170px; padding: 7px 9px; color: var(--text-primary); background: var(--bg-card); border: 1px solid var(--border-color); border-radius: 8px; font: inherit; }
 .noc-inventory .table-wrapper { max-height: min(62vh, 620px); }
 .noc-inventory .nodes-table { min-width: 810px; }
 .noc-inventory .nodes-table thead { background: var(--bg-primary); }
-.noc-inventory .node-name-cell { flex-direction: column; align-items: flex-start; gap: 3px; }
 .noc-device-link { color: var(--text-primary); font-weight: 700; text-decoration: none; }
 .noc-device-link:hover { text-decoration: underline; color: var(--workspace-blue); }
-.noc-device-site { color: var(--text-secondary); }
 .noc-inventory .row-actions { opacity: .8; }
 .noc-inventory .row-actions:focus-within { opacity: 1; }
 .noc-inventory :focus-visible, .noc-kpis :focus-visible, .workspace-nav :focus-visible { outline: 2px solid var(--workspace-blue); outline-offset: 2px; }
