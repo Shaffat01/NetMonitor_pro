@@ -42,7 +42,6 @@ function loadNodes() {
         .then(data => {
             if (requestId !== latestNodeRequest) return;
             nodesData = data.nodes;
-            syncSiteOptions(nodesData);
             setWorkspaceConnection(livePaused ? 'Refresh paused' : 'Live', livePaused ? 'paused' : 'live');
             renderNodes(nodesData);
             updateLastUpdate();
@@ -108,18 +107,6 @@ function nodeHealth(node) {
     return { 'Node Up': 'up', 'Node Down': 'down' }[node.status] || 'unknown';
 }
 
-function syncSiteOptions(nodes) {
-    const select = document.getElementById('siteFilter');
-    if (!select) return;
-    const selected = select.value;
-    const sites = [...new Set(nodes.map(node => node.site || ''))].sort((a, b) => a.localeCompare(b));
-    const options = [new Option('All sites', ''), ...sites.map(site => new Option(site || 'Unassigned', `site:${site}`))];
-    if (JSON.stringify(options.map(option => option.value)) !== JSON.stringify([...select.options].map(option => option.value))) {
-        select.replaceChildren(...options);
-        select.value = options.some(option => option.value === selected) ? selected : '';
-    }
-}
-
 function setWorkspaceConnection(label, state) {
     const element = document.getElementById('workspaceConnection');
     if (!element) return;
@@ -128,11 +115,9 @@ function setWorkspaceConnection(label, state) {
 }
 
 function applyFiltersAndSearch(nodes) {
-    const site = document.getElementById('siteFilter')?.value;
     return nodes.filter(node =>
-        (!site || `site:${node.site || ''}` === site) &&
         (currentFilter === 'all' || nodeHealth(node) === currentFilter) &&
-        (!searchQuery || [node.node_name, node.ip_address, node.site || ''].some(value => value.toLowerCase().includes(searchQuery)))
+        (!searchQuery || [node.node_name, node.ip_address].some(value => value.toLowerCase().includes(searchQuery)))
     );
 }
 
@@ -257,7 +242,6 @@ function renderNodes(nodes) {
                 <td>
                     <div class="node-name-cell">
                         <a class="noc-device-link" href="/node/${node.id}" onclick="event.stopPropagation()">${escapeHtml(node.node_name)}</a>
-                        <small class="noc-device-site">${escapeHtml(node.site || 'Unassigned')}</small>
                     </div>
                 </td>
                 <td><span class="ip-address">${escapeHtml(node.ip_address)}</span></td>
@@ -457,7 +441,6 @@ function toggleLivePolling() {
 }
 
 function resetDeviceFilters() {
-    document.getElementById('siteFilter').value = '';
     clearSearch();
     setFilter('all');
 }

@@ -21,20 +21,9 @@
 {% block content %}
 <div class="content-wrapper">
     <h2 class="page-title">NOC Reports</h2>
-    <form method="get" action="{{ url_for('reports') }}">
-        <label for="site">Site / Branch</label>
-        <select id="site" name="site">
-            {% for value in sites %}
-                <option value="{{ value }}" {% if site == value %}selected{% endif %}>{{ value or 'Unassigned' }}</option>
-            {% endfor %}
-        </select>
-        <button class="btn btn-primary" type="submit" {% if not sites %}disabled{% endif %}>Filter</button>
-        <a href="{{ url_for('reports') }}">All sites</a>
-    </form>
     <p>Uptime is the percentage of measured checks that received a reply. No measurements means N/A, not 100%. Each window includes the current partial UTC hour.</p>
 
-    {% for group, rows in groups.items() %}
-    <h3>{{ group or 'Unassigned' }}</h3>
+    {% if rows %}
     <div class="table-wrapper"><table class="nodes-table">
         <thead><tr><th>Node</th><th>24-hour uptime</th><th>7-day uptime</th><th>7-day downtime</th></tr></thead>
         <tbody>{% for node, day, week, down in rows %}
@@ -44,7 +33,7 @@
             <td>{{ (down / 60)|round(1) }} min</td></tr>
         {% endfor %}</tbody>
     </table></div>
-    {% else %}<p>No nodes match this site.</p>{% endfor %}
+    {% else %}<p>No devices to show yet.</p>{% endif %}
 
     <h3>7-day hourly trends</h3>
     {{ graph('Average latency (ms)', rtt_max, latency_points) }}

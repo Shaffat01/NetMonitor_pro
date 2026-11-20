@@ -6,7 +6,7 @@
         <div class="noc-hero-copy">
             <p class="noc-eyebrow"><span></span> NETWORK OPERATIONS</p>
             <h2 id="overviewTitle">Network overview</h2>
-            <p>See device health, investigate outages, and keep every site in view.</p>
+            <p>See device health, investigate outages, and keep every device in view.</p>
             <a href="{{ url_for('reports') }}" class="noc-hero-link">Explore NOC reports <span aria-hidden="true">↗</span></a>
         </div>
         <svg class="noc-topology" viewBox="0 0 480 230" aria-hidden="true">
@@ -44,9 +44,8 @@
             </div>
         </div>
         <div class="noc-filters">
-            <label class="noc-search"><span aria-hidden="true">⌕</span><input type="search" id="searchInput" aria-label="Search devices" placeholder="Search name, IP or site…" oninput="filterNodes()"><kbd aria-hidden="true">/</kbd></label>
+            <label class="noc-search"><span aria-hidden="true">⌕</span><input type="search" id="searchInput" aria-label="Search devices" placeholder="Search name or IP…" oninput="filterNodes()"><kbd aria-hidden="true">/</kbd></label>
             <button type="button" id="searchClear" class="action-btn-secondary" onclick="clearSearch()" style="display:none">Clear search</button>
-            <label class="noc-site" for="siteFilter">Site <select id="siteFilter" onchange="renderNodes(nodesData)"><option value="">All sites</option></select></label>
             <button type="button" id="pauseLive" class="action-btn-secondary" aria-pressed="false" onclick="toggleLivePolling()">Pause refresh</button>
         </div>
         <div class="table-wrapper">

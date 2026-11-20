@@ -114,21 +114,19 @@ backfilled, and does not produce a standalone remote recovery notice.
 
 ## NOC reports
 
-Open **NOC Reports** in the toolbar. Assign a **Site / Branch** on a node's
-Add/Edit form or use the optional `site` (or `branch`) CSV column. Older nodes
-appear under **Unassigned** until edited. Restarting after the update adds the
-site column and creates the reporting table automatically; back up first.
+Open **NOC Reports** in the toolbar to see all nodes together. Existing site
+values in older databases are retained for compatibility but are not shown.
 
 - **24-hour / 7-day uptime:** percentage of measured probes with a reply, with
   sample counts. These are 24 or 168 UTC hourly buckets, including the current
   partial hour, not a time-based SLA. Missing probes and monitor errors do not
   count as successful or failed checks. No measurements display as **N/A**.
 - **Trends:** average latency of probes with replies and average packet loss of
-  all measured probes, grouped by UTC hour for the selected site(s). Gaps mean
+  all measured probes, grouped by UTC hour across all nodes. Gaps mean
   missing data. History begins after the update; hourly rollups are retained
   for approximately eight days.
 - **Top downtime:** confirmed DOWN incidents from the downtime log, clipped to
-  the selected seven-day report window. Open incidents count through the report
+  the seven-day report window. Open incidents count through the report
   time. Clearing logs removes their contribution to this ranking.
 
 ## Synthetic performance benchmark
