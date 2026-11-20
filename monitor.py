@@ -1,3 +1,6 @@
+from health import next_status
+from reporting import record_probe
+from alerts import muted, queue_alert, utcnow
 import asyncio
 import threading
 import platform
@@ -6,7 +9,7 @@ import re
 from datetime import datetime
 from icmplib import async_multiping, ping as sync_ping
 from models import db, Node, DowntimeLog
-from win_notify import notify_node_down, notify_node_up, notify_warning
+from win_notify import notify_node_down, notify_node_up
 
 class NetworkMonitor:
     def __init__(self, app=None):
@@ -85,6 +88,10 @@ class NetworkMonitor:
             )
 
             output = result.stdout
+            summary = (r'\(\d+% loss\)' if system == 'windows'
+                       else r'\d+(?:\.\d+)?% packet loss')
+            if result.returncode not in (0, 1) or not re.search(summary, output):
+                raise RuntimeError('Ping did not return a valid packet summary')
             packet_loss = 100.0
             response_time = 0.0
             is_alive = False
@@ -106,7 +113,7 @@ class NetworkMonitor:
                     # যদি packet loss ১০০% এর কম হয়, তবেই ধরে নেব এলাইভ
                     is_alive = packet_loss < 100.0
             else:
-                loss_match = re.search(r'(\d+)% packet loss', output)
+                loss_match = re.search(r'(\d+(?:\.\d+)?)% packet loss', output)
                 if loss_match:
                     packet_loss = float(loss_match.group(1))
                 time_match = re.search(r'rtt min/avg/max/mdev = [\d.]+/([\d.]+)/', output)
@@ -126,24 +133,14 @@ class NetworkMonitor:
                 'packet_loss': packet_loss / 100.0
             }
 
-        except subprocess.TimeoutExpired:
-            return {'address': ip_address, 'is_alive': False, 'avg_rtt': 0.0, 'packet_loss': 1.0}
         except Exception as e:
-            return {'address': ip_address, 'is_alive': False, 'avg_rtt': 0.0, 'packet_loss': 1.0}
+            print(f"[PROBE ERROR] {ip_address}: {e}")
+            return {'address': ip_address, 'error': True}
 
     def _evaluate_status(self, node, ping_success, packet_loss, response_time):
-        """
-        Simple SolarWinds-style: Only Up/Down with flap protection.
-        No Warning state - prevents flapping completely.
-        """
         config = self.app.config
-        FAIL_THRESHOLD = config.get('FAIL_THRESHOLD', 3)
-        SUCCESS_THRESHOLD = config.get('SUCCESS_THRESHOLD', 2)
-
         old_status = node.status
-        new_status = old_status
 
-        # Update counters
         if ping_success:
             node.consecutive_successes = (node.consecutive_successes or 0) + 1
             node.consecutive_failures = 0
@@ -151,25 +148,17 @@ class NetworkMonitor:
             node.consecutive_failures = (node.consecutive_failures or 0) + 1
             node.consecutive_successes = 0
 
-        # State machine - ONLY Up or Down
-        if ping_success:
-            if old_status == 'Node Down' or old_status == 'Unknown':
-                if node.consecutive_successes >= SUCCESS_THRESHOLD:
-                    new_status = 'Node Up'
-            else:
-                new_status = 'Node Up'
-        else:
-            if old_status == 'Node Up' or old_status == 'Unknown':
-                if node.consecutive_failures >= FAIL_THRESHOLD:
-                    new_status = 'Node Down'
-            else:
-                new_status = 'Node Down'
+        new_status = next_status(
+            old_status, ping_success, node.consecutive_failures, node.consecutive_successes,
+            fail=config.get('FAIL_THRESHOLD', 3), recover=config.get('SUCCESS_THRESHOLD', 2),
+        )
 
         # Update metrics (always)
         node.response_time = response_time
         node.packet_loss = packet_loss
         node.last_ping_success = ping_success
         node.last_checked = datetime.utcnow()
+        record_probe(node.id, node.last_checked, ping_success, packet_loss, response_time)
 
         # Apply status change
         if new_status != old_status:
@@ -185,19 +174,18 @@ class NetworkMonitor:
                 try:
                     if n_status == 'Node Down':
                         notify_node_down(n_name, n_ip)
-                    elif n_status == 'Node Up' and (o_status == 'Node Down' or o_status == 'Warning'):
+                    elif n_status == 'Node Up' and o_status == 'Node Down':
                         notify_node_up(n_name, n_ip)
-                    elif n_status == 'Warning':
-                        notify_warning(n_name, n_ip)
                 except Exception as e:
                     print(f"[NOTIFY ERROR] {e}")
 
             # থ্রেড দিয়ে নোটিফিকেশন ফায়ার করা হচ্ছে যাতে অ্যাপ ফ্রিজ না হয়
-            threading.Thread(
-                target=fire_notification, 
-                args=(node.node_name, node.ip_address, new_status, old_status),
-                daemon=True
-            ).start()
+            if not muted(utcnow()):
+                threading.Thread(
+                    target=fire_notification,
+                    args=(node.node_name, node.ip_address, new_status, old_status),
+                    daemon=True
+                ).start()
 
             # ============ DOWNTIME LOGGING ============
             try:
@@ -213,12 +201,14 @@ class NetworkMonitor:
                         is_resolved=False
                     )
                     db.session.add(log)
+                    queue_alert(log, 'down')
 
-                elif new_status == 'Node Up' and (old_status == 'Node Down' or old_status == 'Warning'):
+                elif new_status == 'Node Up' and old_status == 'Node Down':
                     # Node came BACK UP - find unresolved log and close it
                     unresolved = DowntimeLog.query.filter_by(
                         node_id=node.id,
-                        is_resolved=False
+                        is_resolved=False,
+                        status_change=old_status
                     ).order_by(DowntimeLog.timestamp.desc()).first()
 
                     if unresolved:
@@ -238,19 +228,9 @@ class NetworkMonitor:
                             is_resolved=True
                         )
                         db.session.add(recovery_log)
+                        if unresolved.status_change == 'Node Down':
+                            queue_alert(unresolved, 'recovery')
 
-                elif new_status == 'Warning':
-                    # Warning state log
-                    log = DowntimeLog(
-                        node_id=node.id,
-                        node_name=node.node_name,
-                        ip_address=node.ip_address,
-                        status_change='Warning',
-                        previous_status=old_status,
-                        timestamp=datetime.utcnow(),
-                        is_resolved=False
-                    )
-                    db.session.add(log)
             except Exception as e:
                 print(f"[LOG ERROR] Failed to save downtime log: {e}")
 
@@ -268,6 +248,8 @@ class NetworkMonitor:
                         count=self.app.config.get('PING_COUNT', 2),
                         timeout=self.app.config.get('PING_TIMEOUT', 1)
                     )
+                    if result.get('error'):
+                        return
                     response_time = round(result['avg_rtt'], 1)
                     packet_loss = round(result['packet_loss'] * 100, 1)
                     ping_success = result['is_alive']
@@ -285,9 +267,7 @@ class NetworkMonitor:
 
             except Exception as e:
                 print(f"Ping error for {node.ip_address}: {e}")
-                response_time = 0.0
-                packet_loss = 100.0
-                ping_success = False
+                return
 
             self._evaluate_status(node, ping_success, packet_loss, response_time)
             db.session.commit()
@@ -336,6 +316,8 @@ class NetworkMonitor:
                 # Update nodes
                 status_changed = False
                 for result in results:
+                    if result.get('error'):
+                        continue
                     nodes_for_ip = ip_to_nodes.get(result['address'], [])
                     for node in nodes_for_ip:
                         ping_success = result['is_alive']
@@ -381,12 +363,8 @@ class NetworkMonitor:
                     results.append(future.result(timeout=10))
                 except Exception as e:
                     ip = future_to_ip[future]
-                    results.append({
-                        'address': ip,
-                        'is_alive': False,
-                        'avg_rtt': 0.0,
-                        'packet_loss': 1.0
-                    })
+                    print(f'[PROBE ERROR] {ip}: {e}')
+                    results.append({'address': ip, 'error': True})
 
         return results
 
@@ -404,6 +382,6 @@ class NetworkMonitor:
             return results
         except Exception as e:
             print(f"Async ping error: {e}")
-            return []
+            raise
 
 monitor = NetworkMonitor()

@@ -7,6 +7,8 @@ let nodesData = [];
 let pollIntervals = [];
 let currentFilter = 'all';
 let searchQuery = '';
+let livePaused = false;
+let latestNodeRequest = 0;
 let previousStatuses = {};
 let soundEnabled = localStorage.getItem('soundEnabled') !== 'false'; // Default: enabled
 let audioContext = null;
@@ -20,7 +22,7 @@ function toggleTheme() {
     document.documentElement.setAttribute('data-theme', newTheme);
     localStorage.setItem('theme', newTheme);
 
-    const icon = document.querySelector('.theme-toggle i');
+    const icon = document.querySelector('#themeToggle i');
     icon.className = newTheme === 'dark' ? 'fas fa-sun' : 'fas fa-moon';
 }
 
@@ -30,16 +32,39 @@ document.documentElement.setAttribute('data-theme', savedTheme);
 
 // ============ LOAD NODES ============
 function loadNodes() {
+    if (!document.getElementById('nodesBody')) return;
+    const requestId = ++latestNodeRequest;
     fetch(`/api/nodes?sort=${currentSort}&order=${currentOrder}`)
-        .then(response => response.json())
+        .then(response => {
+            if (!response.ok) throw new Error(`HTTP ${response.status}`);
+            return response.json();
+        })
         .then(data => {
+            if (requestId !== latestNodeRequest) return;
             nodesData = data.nodes;
+            syncSiteOptions(nodesData);
+            setWorkspaceConnection(livePaused ? 'Refresh paused' : 'Live', livePaused ? 'paused' : 'live');
             renderNodes(nodesData);
             updateLastUpdate();
             checkAndUpdateTabTitle();  // Update tab title with down count
         })
         .catch(error => {
+            if (requestId !== latestNodeRequest) return;
             console.error('Error loading nodes:', error);
+            setWorkspaceConnection('Connection lost', 'offline');
+            if (Array.isArray(nodesData)) {
+                nodesData.forEach(node => {
+                    if (node.enabled) node.stale ||= !node.last_checked ||
+                        Date.now() - Date.parse(node.last_checked) >= node.stale_after_seconds * 1000;
+                });
+                renderNodes(nodesData);
+                checkAndUpdateTabTitle();
+            }
+            const tbody = document.getElementById('nodesBody');
+            if (!nodesData.length && tbody) {
+                tbody.innerHTML = '<tr><td colspan="8" class="loading-cell">Could not load devices. Refresh will retry automatically.</td></tr>';
+                document.getElementById('resultCount').textContent = 'Unable to load devices';
+            }
             updateStatusText('Error loading nodes');
         });
 }
@@ -57,7 +82,9 @@ function updateLastUpdate() {
 function setFilter(filter) {
     currentFilter = filter;
     document.querySelectorAll('.filter-btn').forEach(btn => {
-        btn.classList.toggle('active', btn.dataset.filter === filter);
+        const active = btn.dataset.filter === filter;
+        btn.classList.toggle('active', active);
+        btn.setAttribute('aria-pressed', String(active));
     });
     renderNodes(nodesData);
 }
@@ -75,40 +102,54 @@ function clearSearch() {
     renderNodes(nodesData);
 }
 
+function nodeHealth(node) {
+    if (!node.enabled) return 'disabled';
+    if (node.stale) return 'stale';
+    return { 'Node Up': 'up', 'Node Down': 'down' }[node.status] || 'unknown';
+}
+
+function syncSiteOptions(nodes) {
+    const select = document.getElementById('siteFilter');
+    if (!select) return;
+    const selected = select.value;
+    const sites = [...new Set(nodes.map(node => node.site || ''))].sort((a, b) => a.localeCompare(b));
+    const options = [new Option('All sites', ''), ...sites.map(site => new Option(site || 'Unassigned', `site:${site}`))];
+    if (JSON.stringify(options.map(option => option.value)) !== JSON.stringify([...select.options].map(option => option.value))) {
+        select.replaceChildren(...options);
+        select.value = options.some(option => option.value === selected) ? selected : '';
+    }
+}
+
+function setWorkspaceConnection(label, state) {
+    const element = document.getElementById('workspaceConnection');
+    if (!element) return;
+    element.textContent = label;
+    element.parentElement.dataset.state = state;
+}
+
 function applyFiltersAndSearch(nodes) {
-    let filtered = nodes;
-
-    // Status filter
-    if (currentFilter !== 'all') {
-        const statusMap = {
-            'up': 'Node Up',
-            'down': 'Node Down',
-            'warning': 'Warning',
-            'unknown': 'Unknown'
-        };
-        filtered = filtered.filter(n => n.status === statusMap[currentFilter]);
-    }
-
-    // Search filter
-    if (searchQuery) {
-        filtered = filtered.filter(n =>
-            n.node_name.toLowerCase().includes(searchQuery) ||
-            n.ip_address.toLowerCase().includes(searchQuery)
-        );
-    }
-
-    return filtered;
+    const site = document.getElementById('siteFilter')?.value;
+    return nodes.filter(node =>
+        (!site || `site:${node.site || ''}` === site) &&
+        (currentFilter === 'all' || nodeHealth(node) === currentFilter) &&
+        (!searchQuery || [node.node_name, node.ip_address, node.site || ''].some(value => value.toLowerCase().includes(searchQuery)))
+    );
 }
 
 // ============ RENDER NODES TABLE ============
 function renderNodes(nodes) {
     const tbody = document.getElementById('nodesBody');
+    if (!tbody) return;
+    const counts = { all: nodes.length, up: 0, down: 0, stale: 0, disabled: 0, unknown: 0 };
+    nodes.forEach(node => counts[nodeHealth(node)]++);
+    document.querySelectorAll('[data-count]').forEach(el => { el.textContent = counts[el.dataset.count]; });
     const filtered = applyFiltersAndSearch(nodes);
 
     // Update result count
     const countEl = document.getElementById('resultCount');
     if (countEl) {
-        countEl.textContent = `Showing ${filtered.length} of ${nodes.length} nodes`;
+        const label = `Showing ${filtered.length} of ${nodes.length} devices`;
+        if (countEl.textContent !== label) countEl.textContent = label;
     }
 
     if (filtered.length === 0) {
@@ -117,7 +158,8 @@ function renderNodes(nodes) {
                 <td colspan="8" class="loading-cell">
                     <div class="loading-spinner">
                         <i class="fas fa-search" style="color: var(--text-muted);"></i>
-                        <p>No nodes match your criteria</p>
+                        <p>${nodes.length ? 'No devices match these filters.' : 'No devices to show yet.'}</p>
+                        ${nodes.length ? '<button type="button" class="action-btn-secondary" onclick="resetDeviceFilters()">Reset filters</button>' : ''}
                     </div>
                 </td>
             </tr>
@@ -128,9 +170,9 @@ function renderNodes(nodes) {
     let html = '';
     filtered.forEach(node => {
         const isSelected = selectedNodeId === node.id;
-        const isDown = node.status === 'Node Down';
-        const isWarning = node.status === 'Warning';
-        const isUnknown = node.status === 'Unknown';
+        const unavailable = !node.enabled || node.stale;
+        const isDown = !unavailable && node.status === 'Node Down';
+        const isUnknown = unavailable || node.status === 'Unknown';
 
         let dotClass = 'dot-up';
         let badgeClass = 'status-up';
@@ -140,10 +182,6 @@ function renderNodes(nodes) {
             dotClass = 'dot-down';
             badgeClass = 'status-down';
             rowClass = 'row-down';
-        } else if (isWarning) {
-            dotClass = 'dot-warning';
-            badgeClass = 'status-warning';
-            rowClass = 'row-warning';
         } else if (isUnknown) {
             dotClass = 'dot-unknown';
             badgeClass = 'status-unknown';
@@ -151,7 +189,7 @@ function renderNodes(nodes) {
 
         // Detect status change
         const previousStatus = previousStatuses[node.id];
-        if (previousStatus && previousStatus !== node.status) {
+        if (!unavailable && previousStatus && previousStatus !== node.status) {
             rowClass += ' new-status';
 
             // Play sound based on status change
@@ -172,7 +210,7 @@ function renderNodes(nodes) {
                     `${escapeHtml(node.node_name)} (${escapeHtml(node.ip_address)}) is DOWN!`,
                     'down'
                 );
-            } else if (node.status === 'Node Up' && (previousStatus === 'Node Down' || previousStatus === 'Warning')) {
+            } else if (node.status === 'Node Up' && previousStatus === 'Node Down') {
                 playNodeUpSound();
                 showNotification(
                     `🟢 <strong>${escapeHtml(node.node_name)}</strong> is UP<br>
@@ -188,23 +226,6 @@ function renderNodes(nodes) {
                 showAlertBar(
                     `${escapeHtml(node.node_name)} (${escapeHtml(node.ip_address)}) is back UP!`,
                     'up'
-                );
-            } else if (node.status === 'Warning') {
-                playWarningSound();
-                showNotification(
-                    `🟡 <strong>${escapeHtml(node.node_name)}</strong> - Warning<br>
-                    <small>${escapeHtml(node.ip_address)}</small>`,
-                    'warning'
-                );
-                sendDesktopNotification(
-                    '🟡 Warning',
-                    `${node.node_name} (${node.ip_address}) - Warning`,
-                    '',
-                    'warn-' + node.id
-                );
-                showAlertBar(
-                    `${escapeHtml(node.node_name)} (${escapeHtml(node.ip_address)}) - Warning`,
-                    'warning'
                 );
             }
         }
@@ -228,30 +249,31 @@ function renderNodes(nodes) {
             <tr class="${rowClass}"
                 data-id="${node.id}"
                 onclick="selectNode(${node.id}, event)"
-                ondblclick="editNode(${node.id})"
+                ondblclick="window.location.href='/node/${node.id}'"
                 oncontextmenu="showContextMenu(event, ${node.id})">
                 <td class="col-status">
                     <span class="status-dot ${dotClass}"></span>
                 </td>
                 <td>
                     <div class="node-name-cell">
-                        <span title="${escapeHtml(node.node_name)}">${escapeHtml(node.node_name)}</span>
+                        <a class="noc-device-link" href="/node/${node.id}" onclick="event.stopPropagation()">${escapeHtml(node.node_name)}</a>
+                        <small class="noc-device-site">${escapeHtml(node.site || 'Unassigned')}</small>
                     </div>
                 </td>
                 <td><span class="ip-address">${escapeHtml(node.ip_address)}</span></td>
                 <td><span class="metric-value ${rtClass}">${node.response_time_display}</span></td>
                 <td><span class="metric-value ${plClass}">${node.packet_loss_display}</span></td>
-                <td><span class="status-badge ${badgeClass}">${node.status}</span></td>
+                <td><span class="status-badge ${badgeClass}">${!node.enabled ? 'Disabled' : node.stale ? 'Stale' : node.status}</span><br><small>Last checked: ${node.last_checked ? new Date(node.last_checked).toLocaleString() : 'Never'}</small></td>
                 <td><span class="time-ago"><i class="far fa-clock"></i> ${node.since_last_change}</span></td>
                 <td class="col-actions">
-                    <div class="row-actions">
+                    <div class="row-actions manage-only">
                         <button class="row-action-btn ping" onclick="pingNode(${node.id}); event.stopPropagation();" title="Ping">
                             <i class="fas fa-satellite-dish"></i>
                         </button>
                         <button class="row-action-btn" onclick="editNode(${node.id}); event.stopPropagation();" title="Edit">
                             <i class="fas fa-edit"></i>
                         </button>
-                        <button class="row-action-btn delete" onclick="deleteNode(${node.id}, '${escapeHtml(node.node_name).replace(/'/g, "\\'")}'); event.stopPropagation();" title="Delete">
+                        <button class="row-action-btn delete" onclick="deleteNode(${node.id}); event.stopPropagation();" title="Delete">
                             <i class="fas fa-trash"></i>
                         </button>
                     </div>
@@ -266,6 +288,10 @@ function renderNodes(nodes) {
 // ============ SORTING ============
 function initSorting() {
     document.querySelectorAll('th.sortable').forEach(th => {
+        th.tabIndex = 0;
+        th.addEventListener('keydown', e => {
+            if (e.key === 'Enter' || e.key === ' ') { e.preventDefault(); th.click(); }
+        });
         th.addEventListener('click', function() {
             const sortField = this.dataset.sort;
 
@@ -278,11 +304,13 @@ function initSorting() {
 
             document.querySelectorAll('th.sortable').forEach(header => {
                 header.classList.remove('active-sort');
+                header.removeAttribute('aria-sort');
                 const arrow = header.querySelector('.sort-arrow');
                 if (arrow) arrow.textContent = '';
             });
 
             this.classList.add('active-sort');
+            this.setAttribute('aria-sort', currentOrder === 'asc' ? 'ascending' : 'descending');
             const arrow = this.querySelector('.sort-arrow');
             if (arrow) {
                 arrow.textContent = currentOrder === 'asc' ? '▲' : '▼';
@@ -311,7 +339,7 @@ function editNode(nodeId) {
 
 function pingNode(nodeId) {
     updateStatusText('Pinging node...');
-    fetch(`/api/nodes/${nodeId}/ping`, { method: 'POST' })
+    netmonPost(`/api/nodes/${nodeId}/ping`, { method: 'POST' })
         .then(response => response.json())
         .then(data => {
             updateStatusText(`Ping complete: ${data.ip_address} - ${data.status}`);
@@ -320,10 +348,10 @@ function pingNode(nodeId) {
         .catch(error => updateStatusText('Ping failed'));
 }
 
-function deleteNode(nodeId, nodeName) {
+function deleteNode(nodeId, nodeName = nodesData.find(node => node.id === nodeId)?.node_name || 'Unknown') {
     if (!confirm(`Are you sure you want to delete "${nodeName}"?`)) return;
 
-    fetch('/api/nodes/delete', {
+    netmonPost('/api/nodes/delete', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({ node_id: nodeId })
@@ -333,7 +361,6 @@ function deleteNode(nodeId, nodeName) {
         if (data.success) {
             updateStatusText(`Node "${nodeName}" deleted`);
             loadNodes();
-            updateStats();
         }
     });
 }
@@ -377,21 +404,25 @@ function deleteFromContext() {
 document.addEventListener('click', hideContextMenu);
 
 // ============ TOOLBAR ACTIONS ============
-function refreshAll() {
+async function refreshAll() {
     const btn = document.getElementById('refreshBtn');
-    const icon = btn.querySelector('i');
-    icon.classList.add('spinning');
-    updateStatusText('Refreshing all nodes...');
-
-    fetch('/api/refresh', { method: 'POST' })
-        .then(() => {
-            setTimeout(() => {
-                loadNodes();
-                updateStats();
-                icon.classList.remove('spinning');
-                updateStatusText('Refresh complete');
-            }, 2000);
-        });
+    if (!btn || btn.disabled) return;
+    btn.disabled = true;
+    btn.textContent = 'Requesting…';
+    try {
+        const response = await netmonPost('/api/refresh');
+        if (!response.ok) throw new Error(`HTTP ${response.status}`);
+        btn.textContent = 'Checks requested';
+        updateStatusText('Checks requested; results update as they arrive');
+    } catch (error) {
+        btn.textContent = 'Request failed';
+        updateStatusText('Could not request checks');
+    } finally {
+        setTimeout(() => {
+            btn.disabled = false;
+            btn.textContent = 'Run checks';
+        }, 2000);
+    }
 }
 
 function pingSelected() {
@@ -399,48 +430,10 @@ function pingSelected() {
     else updateStatusText('No node selected');
 }
 
-// ============ STATS WITH ANIMATION ============
-function updateStats() {
-    fetch('/api/stats')
-        .then(response => response.json())
-        .then(data => {
-            animateNumber('statTotal', data.total);
-            animateNumber('statUp', data.up);
-            animateNumber('statDown', data.down);
-            animateNumber('statWarning', data.warning || 0);
-            animateNumber('statUnknown', data.unknown);
-        });
-}
-
-function animateNumber(elementId, target) {
-    const el = document.getElementById(elementId);
-    if (!el) return;
-
-    const current = parseInt(el.textContent) || 0;
-    if (current === target) return;
-
-    const duration = 500;
-    const steps = 20;
-    const stepValue = (target - current) / steps;
-    let step = 0;
-
-    const interval = setInterval(() => {
-        step++;
-        const value = Math.round(current + stepValue * step);
-        el.textContent = value;
-
-        if (step >= steps) {
-            el.textContent = target;
-            clearInterval(interval);
-        }
-    }, duration / steps);
-}
-
 // ============ POLLING ============
 function startPolling() {
     stopPolling();
-    pollIntervals.push(setInterval(loadNodes, 5000));
-    pollIntervals.push(setInterval(updateStats, 5000));
+    if (!livePaused && document.getElementById('nodesBody')) pollIntervals.push(setInterval(loadNodes, 5000));
 }
 
 function stopPolling() {
@@ -448,12 +441,32 @@ function stopPolling() {
     pollIntervals = [];
 }
 
+function toggleLivePolling() {
+    livePaused = !livePaused;
+    const button = document.getElementById('pauseLive');
+    button.textContent = livePaused ? 'Resume refresh' : 'Pause refresh';
+    button.setAttribute('aria-pressed', String(livePaused));
+    if (livePaused) {
+        stopPolling();
+        latestNodeRequest++;
+        setWorkspaceConnection('Refresh paused', 'paused');
+    } else {
+        loadNodes();
+        startPolling();
+    }
+}
+
+function resetDeviceFilters() {
+    document.getElementById('siteFilter').value = '';
+    clearSearch();
+    setFilter('all');
+}
+
 document.addEventListener('visibilitychange', function() {
     if (document.hidden) {
         stopPolling();
-    } else {
+    } else if (!livePaused) {
         loadNodes();
-        updateStats();
         startPolling();
     }
 });
@@ -471,16 +484,17 @@ function escapeHtml(text) {
     return div.innerHTML;
 }
 
-// Keyboard shortcuts
+// Keyboard shortcuts only apply on the inventory page.
 document.addEventListener('keydown', function(e) {
-    if (e.key === 'F5') { e.preventDefault(); refreshAll(); }
-    if (e.key === '/' && document.activeElement.tagName !== 'INPUT') {
+    const search = document.getElementById('searchInput');
+    if (!search || e.ctrlKey || e.metaKey || e.altKey) return;
+    if (e.key === '/' && !document.activeElement.matches('input, textarea, select, [contenteditable]')) {
         e.preventDefault();
-        document.getElementById('searchInput').focus();
+        search.focus();
     }
-    if (e.key === 'Escape') {
+    if (e.key === 'Escape' && document.activeElement === search) {
         clearSearch();
-        document.getElementById('searchInput').blur();
+        search.blur();
     }
 });
 
@@ -488,7 +502,6 @@ document.addEventListener('keydown', function(e) {
 document.addEventListener('DOMContentLoaded', function() {
     initSorting();
     loadNodes();
-    updateStats();
     startPolling();
 
     // Initialize audio on first user interaction (browser policy)
@@ -500,7 +513,7 @@ document.addEventListener('DOMContentLoaded', function() {
 
     // Update theme icon
     const savedTheme = localStorage.getItem('theme') || 'light';
-    const icon = document.querySelector('.theme-toggle i');
+    const icon = document.querySelector('#themeToggle i');
     if (icon) icon.className = savedTheme === 'dark' ? 'fas fa-sun' : 'fas fa-moon';
 
     // Update sound icon
@@ -715,7 +728,7 @@ function checkAndUpdateTabTitle() {
 
     let downCount = 0;
     nodesData.forEach(function(n) {
-        if (n.status === 'Node Down') downCount++;
+        if (n.enabled && !n.stale && n.status === 'Node Down') downCount++;
     });
 
     updateTabTitle(downCount);

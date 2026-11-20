@@ -13,7 +13,7 @@
             </div>
         </div>
 
-        <form method="POST" action="/edit/{{ node.id }}" class="modern-form">
+        <form method="POST" action="/edit/{{ node.id }}" class="modern-form">{% if auth_enabled %}<input type="hidden" name="csrf_token" value="{{ csrf_token() }}">{% endif %}
             <div class="form-row">
                 <div class="form-field">
                     <label for="node_name">
@@ -75,6 +75,13 @@
                 </div>
             </div>
 
+            <div class="form-row">
+                <div class="form-field">
+                    <label for="site">Site / Branch</label>
+                    <input type="text" id="site" name="site" maxlength="100" value="{{ node.site }}" placeholder="e.g., Gazipur">
+                </div>
+            </div>
+
             <div class="form-actions">
                 <a href="/" class="btn btn-ghost">
                     <i class="fas fa-arrow-left"></i> Cancel
@@ -90,7 +97,7 @@
     </div>
 </div>
 
-<form id="deleteForm" method="POST" action="/delete/{{ node.id }}" style="display:none;"></form>
+<form id="deleteForm" method="POST" action="/delete/{{ node.id }}" style="display:none;">{% if auth_enabled %}<input type="hidden" name="csrf_token" value="{{ csrf_token() }}">{% endif %}</form>
 
 <script>
 function confirmDelete(id, name) {

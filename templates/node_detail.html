@@ -137,10 +137,10 @@ function renderNodeHeader(node) {
             '</div>' +
         '</div>' +
         '<div class="node-detail-actions">' +
-            '<button class="btn btn-secondary" onclick="pingNodeFromDetail(' + node.id + ')">' +
+            '<button class="btn btn-secondary manage-only" onclick="pingNodeFromDetail(' + node.id + ')">' +
                 '<i class="fas fa-satellite-dish"></i> Ping Now' +
             '</button>' +
-            '<a href="/edit/' + node.id + '" class="btn btn-secondary">' +
+            '<a href="/edit/' + node.id + '" class="btn btn-secondary manage-only">' +
                 '<i class="fas fa-edit"></i> Edit Node' +
             '</a>' +
             '<a href="/" class="btn btn-ghost">' +
@@ -272,7 +272,7 @@ function renderTimeline(logs, total) {
 
 // ========== Ping from Detail ==========
 function pingNodeFromDetail(nid) {
-    fetch('/api/nodes/' + nid + '/ping', { method: 'POST' })
+    netmonPost('/api/nodes/' + nid + '/ping', { method: 'POST' })
         .then(function(response) { return response.json(); })
         .then(function(data) {
             console.log('[Node Detail] Ping result:', data);

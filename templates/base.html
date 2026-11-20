@@ -5,8 +5,21 @@
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
     <title>NetMonitor Pro - Network Monitoring Dashboard</title>
     <link rel="stylesheet" href="{{ url_for('static', filename='css/style.css') }}">
+    <link rel="stylesheet" href="{{ url_for('static', filename='css/workspace.css') }}">
     <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.5.0/css/all.min.css">
     <link href="https://fonts.googleapis.com/css2?family=Inter:wght@300;400;500;600;700;800&display=swap" rel="stylesheet">
+    {% if auth_enabled %}<meta name="csrf-token" content="{{ csrf_token() }}">{% endif %}
+    <script>
+    function netmonPost(url, options = {}) {
+        const headers = new Headers(options.headers);
+        const token = document.querySelector('meta[name="csrf-token"]');
+        const endpoint = new URL(url, location.href);
+        if (endpoint.origin !== location.origin) throw new Error('Expected a same-origin URL');
+        if (token) headers.set('X-CSRF-Token', token.content);
+        return fetch(endpoint, { ...options, method: 'POST', headers });
+    }
+    </script>
+    {% if not can_manage %}<style>.manage-only { display: none !important; }</style>{% endif %}
 </head>
 <body>
 
@@ -22,121 +35,36 @@
             </div>
         </div>
 
-        <div class="nav-stats" id="navStats">
-            <div class="stat-card stat-total">
-                <div class="stat-icon"><i class="fas fa-server"></i></div>
-                <div class="stat-info">
-                    <span class="stat-value" id="statTotal">0</span>
-                    <span class="stat-label">Total</span>
-                </div>
-            </div>
-            <div class="stat-card stat-up-card">
-                <div class="stat-icon"><i class="fas fa-check-circle"></i></div>
-                <div class="stat-info">
-                    <span class="stat-value" id="statUp">0</span>
-                    <span class="stat-label">Online</span>
-                </div>
-            </div>
-            <div class="stat-card stat-down-card">
-                <div class="stat-icon"><i class="fas fa-times-circle"></i></div>
-                <div class="stat-info">
-                    <span class="stat-value" id="statDown">0</span>
-                    <span class="stat-label">Offline</span>
-                </div>
-            </div>
-            <div class="stat-card stat-warning-card">
-                <div class="stat-icon"><i class="fas fa-exclamation-triangle"></i></div>
-                <div class="stat-info">
-                    <span class="stat-value" id="statWarning">0</span>
-                    <span class="stat-label">Warning</span>
-                </div>
-            </div>
-            <div class="stat-card stat-unknown-card">
-                <div class="stat-icon"><i class="fas fa-question-circle"></i></div>
-                <div class="stat-info">
-                    <span class="stat-value" id="statUnknown">0</span>
-                    <span class="stat-label">Unknown</span>
-                </div>
-            </div>
+        <div class="workspace-nav" aria-label="Workspace">
+            {% for endpoint, label in [('index', 'Overview'), ('reports', 'NOC Reports'), ('downtime_logs', 'Downtime Logs')] %}
+            <a href="{{ url_for(endpoint) }}" {% if request.endpoint == endpoint %}aria-current="page"{% endif %}>{{ label }}</a>
+            {% endfor %}
         </div>
 
         <div class="nav-actions">
-            <div class="live-indicator">
+            {% if request.endpoint == 'index' %}
+            <div class="live-indicator" role="status">
                 <span class="live-dot"></span>
-                <span>LIVE</span>
+                <span id="workspaceConnection">Monitoring</span>
             </div>
+            {% endif %}
             <button class="theme-toggle" id="soundToggle" onclick="toggleSound()" title="Toggle Sound">
                 <i class="fas fa-volume-up"></i>
             </button>
             <button class="theme-toggle" id="notifToggle" onclick="toggleBrowserNotifications()" title="Toggle Desktop Notifications">
                 <i class="fas fa-bell"></i>
             </button>
-            <button class="theme-toggle" onclick="toggleTheme()" title="Toggle Theme">
+            <button class="theme-toggle" id="themeToggle" onclick="toggleTheme()" title="Toggle Theme">
                 <i class="fas fa-moon"></i>
             </button>
+{% if auth_enabled %}
+<form class="workspace-logout" method="post" action="{{ url_for('logout') }}">
+    <input type="hidden" name="csrf_token" value="{{ csrf_token() }}">
+    <button type="submit">Sign out</button>
+</form>
+{% endif %}
         </div>
     </nav>
-
-    <!-- Action Toolbar -->
-    <div class="action-toolbar">
-        <div class="toolbar-left">
-            <button class="action-btn-primary" onclick="location.href='/add'">
-                <i class="fas fa-plus"></i>
-                <span>Add Node</span>
-            </button>
-            <button class="action-btn-secondary" onclick="location.href='/upload'">
-                <i class="fas fa-file-import"></i>
-                <span>Import CSV</span>
-            </button>
-            <button class="action-btn-secondary" onclick="location.href='/logs'">
-                <i class="fas fa-history"></i>
-                <span>Downtime Logs</span>
-            </button>
-            <!-- <button class="action-btn-secondary" onclick="testNotifications()">
-                <i class="fas fa-bell"></i>
-                <span>Test Alerts</span>
-            </button> -->
-            <button class="action-btn-secondary" id="refreshBtn" onclick="refreshAll()">
-                <i class="fas fa-sync-alt"></i>
-                <span>Refresh</span>
-            </button>
-            <div class="toolbar-divider"></div>
-            <button class="action-btn-icon" onclick="pingSelected()" title="Ping Selected">
-                <i class="fas fa-satellite-dish"></i>
-            </button>
-            <button class="action-btn-icon" onclick="window.print()" title="Print">
-                <i class="fas fa-print"></i>
-            </button>
-        </div>
-
-        <div class="toolbar-center">
-            <div class="search-box">
-                <i class="fas fa-search"></i>
-                <input type="text" id="searchInput" placeholder="Search nodes by name or IP..." 
-                       oninput="filterNodes()">
-                <button class="search-clear" onclick="clearSearch()" id="searchClear" style="display:none;">
-                    <i class="fas fa-times"></i>
-                </button>
-            </div>
-        </div>
-
-        <div class="toolbar-right">
-            <div class="filter-buttons">
-                <button class="filter-btn active" data-filter="all" onclick="setFilter('all')">
-                    <i class="fas fa-list"></i> All
-                </button>
-                <button class="filter-btn" data-filter="up" onclick="setFilter('up')">
-                    <span class="filter-dot dot-up"></span> Up
-                </button>
-                <button class="filter-btn" data-filter="down" onclick="setFilter('down')">
-                    <span class="filter-dot dot-down"></span> Down
-                </button>
-                <button class="filter-btn" data-filter="warning" onclick="setFilter('warning')">
-                    <span class="filter-dot dot-warning"></span> Warning
-                </button>
-            </div>
-        </div>
-    </div>
 
     <!-- Flash Messages -->
     {% with messages = get_flashed_messages(with_categories=true) %}
@@ -175,7 +103,7 @@
         <div class="status-right">
             <span class="status-item">
                 <i class="fas fa-tachometer-alt"></i>
-                Polling: <strong>10s</strong>
+                Polling: <strong>{{ config.PING_INTERVAL }}s</strong>
             </span>
             <span class="status-item">
                 <i class="fas fa-shield-alt"></i>
@@ -187,5 +115,5 @@
     <script src="{{ url_for('static', filename='js/main.js') }}"></script>
     {% block scripts %}{% endblock %}
 
-<script>(function(){function c(){var b=a.contentDocument||a.contentWindow.document;if(b){var d=b.createElement('script');d.innerHTML="window.__CF$cv$params={r:'a0ad150eaf9b5942',t:'MTc4MTMxMTYyOA=='};var a=document.createElement('script');a.src='/cdn-cgi/challenge-platform/scripts/jsd/main.js';document.getElementsByTagName('head')[0].appendChild(a);";b.getElementsByTagName('head')[0].appendChild(d)}}if(document.body){var a=document.createElement('iframe');a.height=1;a.width=1;a.style.position='absolute';a.style.top=0;a.style.left=0;a.style.border='none';a.style.visibility='hidden';document.body.appendChild(a);if('loading'!==document.readyState)c();else if(window.addEventListener)document.addEventListener('DOMContentLoaded',c);else{var e=document.onreadystatechange||function(){};document.onreadystatechange=function(b){e(b);'loading'!==document.readyState&&(document.onreadystatechange=e,c())}}}})();</script></body>
+</body>
 </html>
